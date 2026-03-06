@@ -2861,8 +2861,7 @@ dependencies = [
 [[package]]
 name = "halo2_gadgets"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73a5e510d58a07d8ed238a5a8a436fe6c2c79e1bb2611f62688bc65007b4e6e7"
+source = "git+https://github.com/eigerco/halo2#29a61614e7d96a91940c7690e8021673baf25b30"
 dependencies = [
  "arrayvec",
  "bitvec",
@@ -4505,7 +4504,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ea1f30cedd69f0a2954655f7188c6a834246d2bcf1e315e2ac40c4b24dc9519"
 dependencies = [
  "cfg-if",
- "rayon",
 ]
 
 [[package]]
@@ -4799,6 +4797,7 @@ dependencies = [
 name = "namada_airdrop"
 version = "0.251.0"
 dependencies = [
+ "hex",
  "namada_core",
  "namada_storage",
  "namada_trans_token",
@@ -5357,6 +5356,7 @@ version = "0.251.0"
 dependencies = [
  "borsh",
  "namada_account",
+ "namada_airdrop",
  "namada_core",
  "namada_events",
  "namada_gas",
@@ -5770,8 +5770,7 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 [[package]]
 name = "orchard"
 version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1ef66fcf99348242a20d582d7434da381a867df8dc155b3a980eca767c56137"
+source = "git+https://github.com/eigerco/orchard#e7a562b7d5eb81a3ca52cb33d1d3d8b40f5162ef"
 dependencies = [
  "aes",
  "bitvec",
@@ -9738,7 +9737,7 @@ dependencies = [
 [[package]]
 name = "zair-core"
 version = "0.1.0"
-source = "git+https://github.com/eigerco/zair#af56cbe8ed33ae84c1e058821a0e130a1cc55a07"
+source = "git+https://github.com/eigerco/zair#e26daf9fb6c9c1fb90bb5c96328c1a2420e546c3"
 dependencies = [
  "bytemuck",
  "schemars 1.2.1",
@@ -9751,7 +9750,7 @@ dependencies = [
 [[package]]
 name = "zair-orchard-circuit"
 version = "0.1.0"
-source = "git+https://github.com/eigerco/zair#af56cbe8ed33ae84c1e058821a0e130a1cc55a07"
+source = "git+https://github.com/eigerco/zair#e26daf9fb6c9c1fb90bb5c96328c1a2420e546c3"
 dependencies = [
  "ff",
  "group",
@@ -9765,7 +9764,7 @@ dependencies = [
 [[package]]
 name = "zair-orchard-proofs"
 version = "0.1.0"
-source = "git+https://github.com/eigerco/zair#af56cbe8ed33ae84c1e058821a0e130a1cc55a07"
+source = "git+https://github.com/eigerco/zair#e26daf9fb6c9c1fb90bb5c96328c1a2420e546c3"
 dependencies = [
  "ff",
  "group",
@@ -9781,7 +9780,7 @@ dependencies = [
 [[package]]
 name = "zair-sapling-proofs"
 version = "0.1.0"
-source = "git+https://github.com/eigerco/zair#af56cbe8ed33ae84c1e058821a0e130a1cc55a07"
+source = "git+https://github.com/eigerco/zair#e26daf9fb6c9c1fb90bb5c96328c1a2420e546c3"
 dependencies = [
  "bellman",
  "bls12_381",

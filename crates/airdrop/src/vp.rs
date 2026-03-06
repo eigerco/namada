@@ -4,9 +4,10 @@ use std::collections::BTreeSet;
 use std::marker::PhantomData;
 
 use namada_core::address::Address;
+use namada_core::collections::HashSet;
 use namada_core::storage::Key;
 use namada_tx::BatchedTxRef;
-use namada_tx::action::{Action, AirdropAction};
+use namada_tx::action::{Action, AirdropAction, ClaimProofsOutput};
 use namada_tx::data::airdrop::{
     OrchardClaimProofResult, SaplingClaimProofResult,
 };
@@ -21,7 +22,12 @@ use zair_sapling_proofs::{
     prepare_verifying_key, verify_claim_proof_bytes as verify_sapling_proof,
 };
 
-use crate::storage_key::{orchard, sapling};
+use crate::{
+    storage_key::{
+        airdrop_nullifier_key, is_airdrop_nullifier_key, orchard, sapling,
+    },
+    utils::reversed_hex_encode,
+};
 
 #[derive(Error, Debug)]
 pub enum VpError {
@@ -56,6 +62,13 @@ pub enum VpError {
     InvalidBytes(String),
     #[error("Invalid value commitment scheme: {0}")]
     InvalidValueCommitmentScheme(String),
+
+    #[error("NullifierAlreadyUsed: {0}")]
+    NullifierAlreadyUsed(String),
+    #[error("Nullifier not properly committed")]
+    NullifierNotCommitted,
+    #[error("Unexpected nullifier key changed: {0}")]
+    UnexpectedNullifierKey(Key),
 }
 
 impl From<VpError> for Error {
@@ -77,7 +90,7 @@ where
     pub fn validate_tx(
         ctx: &'ctx CTX,
         _batched_tx: &BatchedTxRef<'_>,
-        _keys_changed: &BTreeSet<Key>,
+        keys_changed: &BTreeSet<Key>,
         verifiers: &BTreeSet<Address>,
     ) -> Result<()> {
         let actions = ctx.read_actions()?;
@@ -85,6 +98,7 @@ where
             return Err(VpError::NoAction.into());
         }
 
+        let mut revealed_nullifiers = HashSet::new();
         for action in &actions {
             if let Action::Airdrop(AirdropAction::Claim {
                 target,
@@ -96,14 +110,78 @@ where
                     return Err(VpError::Unauthorized(target.clone()).into());
                 }
 
+                // Check if airdrop nullifiers have already been used.
+                check_airdrop_nullifiers(
+                    ctx,
+                    &claim_data,
+                    &mut revealed_nullifiers,
+                )?;
+
                 // zk proof verification.
                 verify_sapling_zk_proofs(ctx, &claim_data.sapling_proofs)?;
                 verify_orchard_zk_proofs(ctx, &claim_data.orchard_proofs)?;
             }
         }
 
+        // Final sanity check that nullifiers were revealed and only expected keys were written.
+        if revealed_nullifiers.is_empty() {
+            return Err(VpError::NoAction.into());
+        }
+
+        for nullifier_key in keys_changed
+            .iter()
+            .filter(|key| is_airdrop_nullifier_key(key))
+        {
+            if !revealed_nullifiers.contains(nullifier_key) {
+                return Err(VpError::UnexpectedNullifierKey(
+                    nullifier_key.clone(),
+                )
+                .into());
+            }
+        }
+
         Ok(())
     }
+}
+
+/// Checks if airdrop nullifiers have already been used.
+fn check_airdrop_nullifiers<'ctx, CTX>(
+    ctx: &'ctx CTX,
+    claim_data: &ClaimProofsOutput,
+    revealed_nullifiers: &mut HashSet<Key>,
+) -> Result<()>
+where
+    CTX: VpEnv<'ctx> + namada_tx::action::Read<Err = Error>,
+{
+    for nullifier in claim_data.nullifier_iter() {
+        let airdrop_nullifier_key = airdrop_nullifier_key(nullifier);
+
+        // Check if nullifier has already been used before.
+        if ctx.has_key_pre(&airdrop_nullifier_key)? {
+            return Err(VpError::NullifierAlreadyUsed(reversed_hex_encode(
+                nullifier,
+            ))
+            .into());
+        }
+
+        // Check if nullifier was previously used in this transaction.
+        if revealed_nullifiers.contains(&airdrop_nullifier_key) {
+            return Err(VpError::NullifierAlreadyUsed(reversed_hex_encode(
+                nullifier,
+            ))
+            .into());
+        }
+
+        // Check that the nullifier was properly commited to store.
+        ctx.read_bytes_post(&airdrop_nullifier_key)?
+            .is_some_and(|value| value.is_empty())
+            .then_some(())
+            .ok_or(VpError::NullifierNotCommitted)?;
+
+        revealed_nullifiers.insert(airdrop_nullifier_key);
+    }
+
+    Ok(())
 }
 
 /// Verifies all Sapling zk proofs for a claim.
