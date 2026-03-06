@@ -1,5 +1,6 @@
 //! Airdrop functions for transactions
 
+use namada_airdrop::storage::reveal_nullifier;
 use namada_core::address::{Address, InternalAddress};
 use namada_core::token::Amount;
 use namada_token;
@@ -19,6 +20,10 @@ impl Ctx {
     ) -> TxResult {
         self.insert_verifier(&Address::Internal(InternalAddress::Airdrop))?;
         self.insert_verifier(target)?;
+
+        for nullifier in claim_data.nullifier_iter() {
+            reveal_nullifier(self, nullifier)?;
+        }
 
         self.push_action(Action::Airdrop(AirdropAction::Claim {
             target: target.clone(),

@@ -1,6 +1,7 @@
 //! Airdrop functionality
 
 pub mod storage;
+pub mod utils;
 pub mod vp;
 
 mod storage_key;

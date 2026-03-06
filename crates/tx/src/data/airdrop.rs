@@ -24,6 +24,14 @@ pub struct ClaimProofsOutput {
     pub orchard_proofs: Vec<OrchardClaimProofResult>,
 }
 
+impl ClaimProofsOutput {
+    /// Returns an iterator over the airdrop nullifiers of the proofs.
+    pub fn nullifier_iter(&self) -> impl Iterator<Item = &[u8; 32]> {
+        self.sapling_proofs.iter().map(|p| &p.airdrop_nullifier)
+            .chain(self.orchard_proofs.iter().map(|p| &p.airdrop_nullifier))
+    }
+}
+
 /// Serializable output of a single Sapling claim proof.
 #[serde_as]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]

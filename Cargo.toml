@@ -165,6 +165,7 @@ futures = "0.3"
 getrandom = "0.3"
 git2 = { version = "0.20", default-features = false }
 group = { version = "0.13.0", default-features = false }
+hex = "0.4"
 hyper = { version = "1.6", features = ["full"] }
 ibc = { version = "0.57.0", features = ["serde"] }
 ibc-derive = "0.10.1"

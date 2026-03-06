@@ -1,18 +1,39 @@
 //! Airdrop storage keys.
 
+use crate::ADDRESS;
+use namada_core::storage::{self, KeySeg};
+use namada_storage::DbKeySeg;
+
 /// Key segment for note commitment root.
 pub const NOTE_COMMITMENT_ROOT_KEY: &str = "note_commitment_root";
 /// Key segment for nullifier gap root.
 pub const NULLIFIER_GAP_ROOT_KEY: &str = "nullifier_gap_root";
 /// Key segment for value commitment scheme.
 pub const VALUE_COMMITMENT_SCHEME_KEY: &str = "value_commitment_scheme";
+/// Key segment for airdrop nullifiers.
+pub const AIRDROP_NULLIFIERS_KEY: &str = "airdrop_nullifiers";
+
+/// Gets a key for the airdrop nullifiers storage.
+pub fn airdrop_nullifier_key(nullifier: &[u8; 32]) -> storage::Key {
+    storage::Key::from(ADDRESS.to_db_key())
+        .push(&AIRDROP_NULLIFIERS_KEY.to_owned())
+        .expect("Cannot obtain a storage key")
+        .push(&hex::encode(nullifier))
+        .expect("Cannot obtain a storage key")
+}
+
+/// Returns whether the given storage key is an airdrop nullifiers key.
+pub fn is_airdrop_nullifier_key(key: &storage::Key) -> bool {
+    matches!(&key.segments[..],
+        [DbKeySeg::AddressSeg(addr),
+                 DbKeySeg::StringSeg(prefix),
+                 DbKeySeg::StringSeg(_nullifier),
+        ] if *addr == ADDRESS && prefix == AIRDROP_NULLIFIERS_KEY)
+}
 
 /// Sapling configuration storage keys.
 pub mod sapling {
-    use namada_core::storage::{self, KeySeg};
-
     use super::*;
-    use crate::ADDRESS;
 
     /// Key segment prefix for Sapling configuration.
     const AIRDROP_SAPLING_KEY: &str = "sapling";
@@ -58,10 +79,7 @@ pub mod sapling {
 
 /// Orchard configuration storage keys.
 pub mod orchard {
-    use namada_core::storage::{self, KeySeg};
-
     use super::*;
-    use crate::ADDRESS;
 
     /// Key segment prefix for Orchard configuration.
     const AIRDROP_ORCHARD_KEY: &str = "orchard";

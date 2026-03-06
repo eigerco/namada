@@ -8,7 +8,16 @@ use zair_core::schema::config::{
     ValueCommitmentScheme,
 };
 
-use crate::storage_key::{orchard, sapling};
+use crate::storage_key::{airdrop_nullifier_key, orchard, sapling};
+
+/// Writes the provided airdrop nullifier to storage.
+pub fn reveal_nullifier<S: StorageWrite>(
+    storage: &mut S,
+    nullifier: &[u8; 32],
+) -> namada_storage::Result<()> {
+    let key = airdrop_nullifier_key(nullifier);
+    storage.write(&key, ())
+}
 
 /// Initialize airdrop configuration from files in the airdrop
 /// directory.
