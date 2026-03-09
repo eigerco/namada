@@ -66,6 +66,9 @@ pub enum VpError {
     NullifierNotCommitted,
     #[error("Unexpected nullifier key changed: {0}")]
     UnexpectedNullifierKey(Key),
+
+    #[error("Message target {0} does not match action target {1}")]
+    MessageTargetMismatch(Address, Address),
 }
 
 impl From<VpError> for Error {
@@ -112,6 +115,9 @@ where
                     &claim_data,
                     &mut revealed_nullifiers,
                 )?;
+
+                // Verify all message targets match the action target.
+                verify_message_targets(claim_data, target)?;
 
                 // zk proof verification.
                 verify_sapling_zk_proofs(ctx, &claim_data.sapling_proofs)?;
@@ -178,6 +184,23 @@ where
         revealed_nullifiers.insert(airdrop_nullifier_key);
     }
 
+    Ok(())
+}
+
+/// Verifies that all message targets match the action target.
+fn verify_message_targets(
+    claim_data: &ClaimProofsOutput,
+    target: &Address,
+) -> Result<()> {
+    for message in claim_data.message_iter() {
+        if &message.target != target {
+            return Err(VpError::MessageTargetMismatch(
+                message.target.clone(),
+                target.clone(),
+            )
+            .into());
+        }
+    }
     Ok(())
 }
 
