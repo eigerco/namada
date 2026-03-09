@@ -2,10 +2,14 @@
 
 use namada_airdrop::storage::reveal_nullifier;
 use namada_core::address::{Address, InternalAddress};
-use namada_token;
+use namada_token::{self, Amount};
 use namada_tx::action::{Action, AirdropAction, ClaimProofsOutput, Write};
 
 use super::*;
+
+/// A constant scaling factor for the Airdrop value. This is used to scale the
+/// value of the claim to NAM tokens.
+pub const ZAIR_SCALING_FACTOR: u64 = 1_000;
 
 impl Ctx {
     /// Claim airdrop tokens
@@ -34,7 +38,7 @@ impl Ctx {
                 &Address::Internal(InternalAddress::Airdrop),
                 token_addr,
                 &message.target,
-                message.amount,
+                Amount::from_u64(message.amount * ZAIR_SCALING_FACTOR),
             )?;
         }
 

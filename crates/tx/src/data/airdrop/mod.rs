@@ -3,7 +3,6 @@ use std::convert::{TryFrom, TryInto};
 use indexmap::IndexMap;
 use namada_core::address::Address;
 use namada_core::borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
-use namada_core::token::Amount;
 use serde::{Deserialize, Serialize};
 use serde_with::hex::Hex;
 use serde_with::serde_as;
@@ -301,7 +300,7 @@ pub struct Message {
     /// The target of the airdrop.
     pub target: Address,
     /// Amount to claim.
-    pub amount: Amount,
+    pub amount: u64,
     /// Commitment value randomness.
     pub rcv: [u8; 32],
 }
@@ -332,10 +331,10 @@ impl TryFrom<MessageInput> for Message {
                 e
             ))
         })?;
-        
+
         Ok(Message {
             target,
-            amount: Amount::native_whole(input.amount),
+            amount: input.amount,
             rcv: input.rcv,
         })
     }
@@ -363,7 +362,6 @@ pub struct ClaimMessagesInputFile {
 /// Tests and strategies for airdrop transactions.
 pub mod tests {
     use namada_core::address::testing::arb_non_internal_address;
-    use namada_core::token::testing::arb_amount;
     use proptest::prelude::any;
     use proptest::prop_compose;
 
@@ -439,7 +437,7 @@ pub mod tests {
         /// Generate an arbitrary message.
         pub fn arb_message()(
             target in arb_non_internal_address(),
-            amount in arb_amount(),
+            amount in any::<u64>(),
             rcv in any::<[u8; 32]>(),
         ) -> Message {
             Message { target, amount, rcv }

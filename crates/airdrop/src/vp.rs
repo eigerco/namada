@@ -8,11 +8,11 @@ use namada_core::collections::HashSet;
 use namada_core::storage::Key;
 use namada_tx::BatchedTxRef;
 use namada_tx::action::{Action, AirdropAction, ClaimProofsOutput};
-use namada_tx::data::airdrop::{
-    OrchardClaimProof, SaplingClaimProof, util::reversed_hex_encode,
-};
+use namada_tx::data::airdrop::util::reversed_hex_encode;
+use namada_tx::data::airdrop::{Message, OrchardClaimProof, SaplingClaimProof};
 use namada_vp_env::{Error, Result, VpEnv};
 use thiserror::Error;
+use zair_core::base::cv_sha256 as compute_cv_sha256;
 use zair_orchard_proofs::{
     ValueCommitmentScheme as OrchardValueCommitmentScheme,
     read_params_from_bytes, verify_claim_proof as verify_orchard_proof,
@@ -52,13 +52,22 @@ pub enum VpError {
     MissingNullifierGapRoot,
     #[error("Missing target id in storage")]
     MissingTargetId,
-    #[error("Missing sapling value commitment scheme in storage")]
-    MissingValueCommitmentScheme,
 
     #[error("Invalid bytes found for: {0}")]
     InvalidBytes(String),
+
+    #[error("Missing value commitment scheme in storage")]
+    MissingValueCommitmentScheme,
     #[error("Invalid value commitment scheme: {0}")]
     InvalidValueCommitmentScheme(String),
+    #[error("Unsupported value commitment scheme")]
+    UnsupportedValueCommitmentScheme,
+    #[error(
+        "Computed value commitment is different from provided value commitment"
+    )]
+    ValueCommitmentMismatch,
+    #[error("Missing cv_sha256 in proof")]
+    MissingCvSha256,
 
     #[error("NullifierAlreadyUsed: {0}")]
     NullifierAlreadyUsed(String),
@@ -201,6 +210,23 @@ fn verify_message_targets(
             .into());
         }
     }
+
+    Ok(())
+}
+
+/// Checks that the SHA256 value comitment is valid.
+///
+/// This computes that `cv = SHA256(b'Zair || LE64(amount) || rcv)`.
+fn check_sha256_value_commitment(
+    cv: &[u8; 32],
+    Message { amount, rcv, .. }: &Message,
+) -> Result<()> {
+    // Note: ZAIR computes the value commitment with only 64 bits.
+    let computed_cv = compute_cv_sha256(*amount, *rcv);
+    if computed_cv != *cv {
+        return Err(VpError::ValueCommitmentMismatch.into());
+    }
+
     Ok(())
 }
 
@@ -255,7 +281,14 @@ where
     };
 
     // Finally, verify the proofs sequentially.
-    for SaplingClaimProof { proof, .. } in sapling_proofs {
+    for SaplingClaimProof { proof, message } in sapling_proofs {
+        if scheme != SaplingValueCommitmentScheme::Sha256 {
+            return Err(VpError::UnsupportedValueCommitmentScheme.into());
+        }
+
+        let cv = proof.cv_sha256.ok_or(VpError::MissingCvSha256)?;
+        check_sha256_value_commitment(&cv, message)?;
+
         verify_sapling_proof(
             &pvk,
             &proof.zkproof,
@@ -330,7 +363,14 @@ where
     };
 
     // Finally, verify the proofs.
-    for OrchardClaimProof { proof, .. } in orchard_proofs {
+    for OrchardClaimProof { proof, message } in orchard_proofs {
+        if scheme != OrchardValueCommitmentScheme::Sha256 {
+            return Err(VpError::UnsupportedValueCommitmentScheme.into());
+        }
+
+        let cv = proof.cv_sha256.ok_or(VpError::MissingCvSha256)?;
+        check_sha256_value_commitment(&cv, message)?;
+
         verify_orchard_proof(
             &params,
             &proof.zkproof,
