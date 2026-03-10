@@ -3,6 +3,7 @@
 use std::collections::BTreeSet;
 use std::marker::PhantomData;
 
+use error::VpError;
 use namada_core::address::Address;
 use namada_core::collections::HashSet;
 use namada_core::storage::Key;
@@ -11,79 +12,13 @@ use namada_tx::action::{Action, AirdropAction, ClaimProofsOutput};
 use namada_tx::data::airdrop::Message;
 use namada_tx::data::airdrop::util::reversed_hex_encode;
 use namada_vp_env::{Error, Result, VpEnv};
-use thiserror::Error;
 use zair_core::base::cv_sha256 as compute_cv_sha256;
 
 use crate::storage_key::{airdrop_nullifier_key, is_airdrop_nullifier_key};
 
+mod error;
 mod orchard;
 mod sapling;
-
-#[derive(Error, Debug)]
-pub enum VpError {
-    #[error("Airdrop action not authorized by {0}")]
-    Unauthorized(Address),
-    #[error("No Airdrop action found")]
-    NoAction,
-
-    #[error("zk proof verification failed: {0}")]
-    ZkProofVerificationFailed(String),
-
-    #[error("Missing verifying key in storage")]
-    MissingVerifyingKey,
-    #[error("Invalid verifying key: {0}")]
-    InvalidVerifyingKey(String),
-
-    #[error("Missing orchard parameters in storage")]
-    MissingOrchardParameters,
-    #[error("Invalid orchard parameters: {0}")]
-    InvalidOrchardParameters(String),
-
-    #[error("Missing sapling note commitment root in storage")]
-    MissingNoteCommitmentRoot,
-    #[error("Missing sapling nullifier gap root in storage")]
-    MissingNullifierGapRoot,
-    #[error("Missing target id in storage")]
-    MissingTargetId,
-
-    #[error("Invalid bytes found for: {0}")]
-    InvalidBytes(String),
-
-    #[error("Missing value commitment scheme in storage")]
-    MissingValueCommitmentScheme,
-    #[error("Invalid value commitment scheme: {0}")]
-    InvalidValueCommitmentScheme(String),
-    #[error("Unsupported value commitment scheme")]
-    UnsupportedValueCommitmentScheme,
-    #[error(
-        "Computed value commitment is different from provided value commitment"
-    )]
-    ValueCommitmentMismatch,
-    #[error("Missing cv_sha256 in proof")]
-    MissingCvSha256,
-
-    #[error("NullifierAlreadyUsed: {0}")]
-    NullifierAlreadyUsed(String),
-    #[error("Nullifier not properly committed")]
-    NullifierNotCommitted,
-    #[error("Unexpected nullifier key changed: {0}")]
-    UnexpectedNullifierKey(Key),
-
-    #[error("Message target {0} does not match action target {1}")]
-    MessageTargetMismatch(Address, Address),
-    #[error("Computed proof hash is different from provided proof hash")]
-    ProofHashMismatch,
-    #[error("Computed message hash is different from provided message hash")]
-    MessageHashMismatch,
-    #[error("Invalid spend auth signature")]
-    InvalidSpendAuthSignature,
-}
-
-impl From<VpError> for Error {
-    fn from(value: VpError) -> Self {
-        Error::new(value)
-    }
-}
 
 /// Airdrop VP
 pub struct AirdropVp<'ctx, CTX> {
