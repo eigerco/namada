@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use borsh::BorshSerialize;
+use data::airdrop::{ClaimAirdrop, ClaimMessagesInputFile, ClaimProofsInputFile, ClaimProofsOutput};
 use data::{Fee, GasLimit, airdrop};
 use masp_primitives::asset_type::AssetType;
 use masp_primitives::transaction::Transaction as MaspTransaction;
@@ -67,7 +68,6 @@ use namada_token::DenominatedAmount;
 use namada_token::masp::shielded_wallet::ShieldedApi;
 use namada_token::masp::{MaspFeeData, MaspTransferData, ShieldedTransfer};
 use namada_token::storage_key::balance_key;
-use namada_tx::action::ClaimProofsOutput;
 use namada_tx::data::pgf::UpdateStewardCommission;
 use namada_tx::data::pos::{BecomeValidator, ConsensusKeyChange};
 use namada_tx::data::{
@@ -1841,8 +1841,8 @@ pub async fn build_claim_airdrop(
     args::ClaimAirdrop {
         tx: tx_args,
         source,
-        amount,
-        claim_data_file,
+        claim_file,
+        messages_file,
         tx_code_path,
     }: &args::ClaimAirdrop,
 ) -> Result<(Tx, SigningData)> {
@@ -1867,26 +1867,34 @@ pub async fn build_claim_airdrop(
     let source =
         source_exists_or_err(source.clone(), tx_args.force, context).await?;
 
-    // Read and decode the claim data file.
-    let claim_data_str =
-        &fs::read_to_string(&claim_data_file).map_err(|e| {
-            Error::Other(format!("Error reading claim data file: {e}"))
+    // Read and decode the proofs file.
+    let proofs_str = fs::read_to_string(&claim_file)
+        .map_err(|e| Error::Other(format!("Error reading proofs file: {e}")))?;
+    let proofs: ClaimProofsInputFile =
+        serde_json::from_str(&proofs_str).map_err(|e| {
+            Error::Encode(EncodingError::Decoding(e.to_string()))
         })?;
-    let claim_data: ClaimProofsOutput = serde_json::from_str(claim_data_str)
-        .map_err(|e| Error::Encode(EncodingError::Decoding(e.to_string())))?;
 
-    // Validate the amount given
+    // Read and decode the messages file.
+    let messages_str = fs::read_to_string(&messages_file).map_err(|e| {
+        Error::Other(format!("Error reading messages file: {e}"))
+    })?;
+    let messages: ClaimMessagesInputFile =
+        serde_json::from_str(&messages_str).map_err(|e| {
+            Error::Encode(EncodingError::Decoding(e.to_string()))
+        })?;
+
+    let claim_data =
+        ClaimProofsOutput::from_input_files(proofs, messages)
+            .map_err(|e| {
+                Error::Encode(EncodingError::Decoding(e.to_string()))
+            })?;
+
     let token = context.native_token();
-    let validated_amount =
-        validate_amount(context, *amount, &token, tx_args.force)
-            .await
-            .expect("expected to validate amount");
-
-    let data = airdrop::ClaimAirdrop {
-        target: source.clone(),
+    let data = ClaimAirdrop {
         token,
-        amount: validated_amount.amount(),
-        claim_data: claim_data.clone(),
+        target: source,
+        claim_data,
     };
 
     build(

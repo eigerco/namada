@@ -8,11 +8,11 @@ use namada_core::collections::HashSet;
 use namada_core::storage::Key;
 use namada_tx::BatchedTxRef;
 use namada_tx::action::{Action, AirdropAction, ClaimProofsOutput};
-use namada_tx::data::airdrop::{
-    OrchardClaimProofResult, SaplingClaimProofResult,
-};
+use namada_tx::data::airdrop::util::reversed_hex_encode;
+use namada_tx::data::airdrop::{Message, OrchardClaimProof, SaplingClaimProof};
 use namada_vp_env::{Error, Result, VpEnv};
 use thiserror::Error;
+use zair_core::base::cv_sha256 as compute_cv_sha256;
 use zair_orchard_proofs::{
     ValueCommitmentScheme as OrchardValueCommitmentScheme,
     read_params_from_bytes, verify_claim_proof as verify_orchard_proof,
@@ -22,11 +22,8 @@ use zair_sapling_proofs::{
     prepare_verifying_key, verify_claim_proof_bytes as verify_sapling_proof,
 };
 
-use crate::{
-    storage_key::{
-        airdrop_nullifier_key, is_airdrop_nullifier_key, orchard, sapling,
-    },
-    utils::reversed_hex_encode,
+use crate::storage_key::{
+    airdrop_nullifier_key, is_airdrop_nullifier_key, orchard, sapling,
 };
 
 #[derive(Error, Debug)]
@@ -55,13 +52,22 @@ pub enum VpError {
     MissingNullifierGapRoot,
     #[error("Missing target id in storage")]
     MissingTargetId,
-    #[error("Missing sapling value commitment scheme in storage")]
-    MissingValueCommitmentScheme,
 
     #[error("Invalid bytes found for: {0}")]
     InvalidBytes(String),
+
+    #[error("Missing value commitment scheme in storage")]
+    MissingValueCommitmentScheme,
     #[error("Invalid value commitment scheme: {0}")]
     InvalidValueCommitmentScheme(String),
+    #[error("Unsupported value commitment scheme")]
+    UnsupportedValueCommitmentScheme,
+    #[error(
+        "Computed value commitment is different from provided value commitment"
+    )]
+    ValueCommitmentMismatch,
+    #[error("Missing cv_sha256 in proof")]
+    MissingCvSha256,
 
     #[error("NullifierAlreadyUsed: {0}")]
     NullifierAlreadyUsed(String),
@@ -69,6 +75,9 @@ pub enum VpError {
     NullifierNotCommitted,
     #[error("Unexpected nullifier key changed: {0}")]
     UnexpectedNullifierKey(Key),
+
+    #[error("Message target {0} does not match action target {1}")]
+    MessageTargetMismatch(Address, Address),
 }
 
 impl From<VpError> for Error {
@@ -103,10 +112,9 @@ where
             if let Action::Airdrop(AirdropAction::Claim {
                 target,
                 claim_data,
-                ..
             }) = action
             {
-                if !verifiers.contains(target) {
+                if !verifiers.contains(&target) {
                     return Err(VpError::Unauthorized(target.clone()).into());
                 }
 
@@ -117,13 +125,17 @@ where
                     &mut revealed_nullifiers,
                 )?;
 
+                // Verify all message targets match the action target.
+                verify_message_targets(claim_data, target)?;
+
                 // zk proof verification.
                 verify_sapling_zk_proofs(ctx, &claim_data.sapling_proofs)?;
                 verify_orchard_zk_proofs(ctx, &claim_data.orchard_proofs)?;
             }
         }
 
-        // Final sanity check that nullifiers were revealed and only expected keys were written.
+        // Final sanity check that nullifiers were revealed and only expected
+        // keys were written.
         if revealed_nullifiers.is_empty() {
             return Err(VpError::NoAction.into());
         }
@@ -184,10 +196,43 @@ where
     Ok(())
 }
 
+/// Verifies that all message targets match the action target.
+fn verify_message_targets(
+    claim_data: &ClaimProofsOutput,
+    target: &Address,
+) -> Result<()> {
+    for message in claim_data.message_iter() {
+        if &message.target != target {
+            return Err(VpError::MessageTargetMismatch(
+                message.target.clone(),
+                target.clone(),
+            )
+            .into());
+        }
+    }
+
+    Ok(())
+}
+
+/// Checks that the SHA256 value comitment is valid.
+///
+/// This computes that `cv = SHA256(b'Zair || LE64(amount) || rcv)`.
+fn check_sha256_value_commitment(
+    cv: &[u8; 32],
+    Message { amount, rcv, .. }: &Message,
+) -> Result<()> {
+    let computed_cv = compute_cv_sha256(*amount, *rcv);
+    if computed_cv != *cv {
+        return Err(VpError::ValueCommitmentMismatch.into());
+    }
+
+    Ok(())
+}
+
 /// Verifies all Sapling zk proofs for a claim.
 fn verify_sapling_zk_proofs<'ctx, CTX>(
     ctx: &'ctx CTX,
-    sapling_proofs: &[SaplingClaimProofResult],
+    sapling_proofs: &[SaplingClaimProof],
 ) -> Result<()>
 where
     CTX: VpEnv<'ctx> + namada_tx::action::Read<Err = Error>,
@@ -235,7 +280,14 @@ where
     };
 
     // Finally, verify the proofs sequentially.
-    for proof in sapling_proofs {
+    for SaplingClaimProof { proof, message } in sapling_proofs {
+        if scheme != SaplingValueCommitmentScheme::Sha256 {
+            return Err(VpError::UnsupportedValueCommitmentScheme.into());
+        }
+
+        let cv = proof.cv_sha256.ok_or(VpError::MissingCvSha256)?;
+        check_sha256_value_commitment(&cv, message)?;
+
         verify_sapling_proof(
             &pvk,
             &proof.zkproof,
@@ -256,7 +308,7 @@ where
 // Verifies all Orchard zk proof for a claim.
 fn verify_orchard_zk_proofs<'ctx, CTX>(
     ctx: &'ctx CTX,
-    orchard_proofs: &[OrchardClaimProofResult],
+    orchard_proofs: &[OrchardClaimProof],
 ) -> Result<()>
 where
     CTX: VpEnv<'ctx> + namada_tx::action::Read<Err = Error>,
@@ -310,7 +362,14 @@ where
     };
 
     // Finally, verify the proofs.
-    for proof in orchard_proofs {
+    for OrchardClaimProof { proof, message } in orchard_proofs {
+        if scheme != OrchardValueCommitmentScheme::Sha256 {
+            return Err(VpError::UnsupportedValueCommitmentScheme.into());
+        }
+
+        let cv = proof.cv_sha256.ok_or(VpError::MissingCvSha256)?;
+        check_sha256_value_commitment(&cv, message)?;
+
         verify_orchard_proof(
             &params,
             &proof.zkproof,

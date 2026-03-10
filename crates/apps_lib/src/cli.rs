@@ -3629,7 +3629,6 @@ pub mod args {
         arg_default("max-concurrent-fetches", DefaultFn(|| 100));
     pub const MAX_ETH_GAS: ArgOpt<u64> = arg_opt("max_eth-gas");
     pub const MEMO_OPT: ArgOpt<String> = arg_opt("memo");
-    pub const CLAIM_DATA_PATH: Arg<PathBuf> = arg("claim-data-path");
     pub const MIGRATION_PATH: ArgOpt<PathBuf> = arg_opt("migration-path");
     pub const MINIMUM_AMOUNT: ArgOpt<token::DenominatedAmount> =
         arg_opt("minimum-amount");
@@ -3785,6 +3784,8 @@ pub mod args {
         }),
     );
     pub const DEVICE_TRANSPORT_ENV_VAR: &str = "NAMADA_DEVICE_TRANSPORT";
+    pub const ZAIR_CLAIM_FILE: Arg<PathBuf> = arg("claim-file-path");
+    pub const ZAIR_MESSAGES_FILE: Arg<PathBuf> = arg("messages-file-path");
 
     /// Global command arguments
     #[derive(Clone, Debug)]
@@ -6620,8 +6621,8 @@ pub mod args {
             Ok(ClaimAirdrop::<SdkTypes> {
                 tx,
                 source: chain_ctx.get(&self.source),
-                amount: self.amount,
-                claim_data_file: self.claim_data_file,
+                claim_file: self.claim_file,
+                messages_file: self.messages_file,
                 tx_code_path: self.tx_code_path.to_path_buf(),
             })
         }
@@ -6631,15 +6632,14 @@ pub mod args {
         fn parse(matches: &ArgMatches) -> Self {
             let tx = Tx::parse(matches);
             let source = SOURCE.parse(matches);
-            let raw_amount = AMOUNT.parse(matches);
-            let amount = InputAmount::Unvalidated(raw_amount);
-            let claim_data_file = CLAIM_DATA_PATH.parse(matches);
+            let claim_file = ZAIR_CLAIM_FILE.parse(matches);
+            let messages_file = ZAIR_MESSAGES_FILE.parse(matches);
             let tx_code_path = PathBuf::from(TX_CLAIM_AIRDROP_WASM);
             Self {
                 tx,
                 source,
-                amount,
-                claim_data_file,
+                claim_file,
+                messages_file,
                 tx_code_path,
             }
         }
@@ -6647,11 +6647,11 @@ pub mod args {
         fn def(app: App) -> App {
             app.add_args::<Tx<CliTypes>>()
                 .arg(SOURCE.def().help(wrap!("Source address.")))
-                .arg(
-                    AMOUNT.def().help(wrap!("The amount to claim in decimal.")),
-                )
-                .arg(CLAIM_DATA_PATH.def().help(wrap!(
-                    "Path to JSON file containing ZAIR claim data and zk proofs."
+                .arg(ZAIR_CLAIM_FILE.def().help(wrap!(
+                    "Path to the JSON file containing ZAIR proofs."
+                )))
+                .arg(ZAIR_MESSAGES_FILE.def().help(wrap!(
+                    "Path to the JSON file containing ZAIR messages."
                 )))
         }
     }
