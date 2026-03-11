@@ -148,18 +148,6 @@ fn verify_message_targets(
     Ok(())
 }
 
-/// Checks that the message hash is valid.
-fn check_message_hash(
-    message_hash: &[u8; 32],
-    message: &Message,
-) -> Result<()> {
-    if message.hash() != *message_hash {
-        return Err(VpError::MessageHashMismatch.into());
-    }
-
-    Ok(())
-}
-
 /// Checks that the SHA256 value comitment is valid.
 ///
 /// This computes that `cv = SHA256(b'Zair || LE64(amount) || rcv)`.

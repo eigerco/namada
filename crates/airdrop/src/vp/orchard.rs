@@ -9,43 +9,33 @@ use zair_orchard_proofs::{
     verify_claim_proof as verify_orchard_proof,
 };
 
-use super::{VpError, check_message_hash, check_sha256_value_commitment};
+use super::{VpError, check_sha256_value_commitment};
 use crate::storage_key::orchard as orchard_key;
 
-/// Checks that the Orchard proof hash is valid.
-fn check_proof_hash(
-    proof_hash: &[u8; 32],
+/// Verifies that the Orchard spend-auth signature is valid.
+fn verify_signature(
+    target_id: &[u8],
     proof: &OrchardSignedClaim,
+    message_hash: &[u8; 32],
 ) -> Result<()> {
-    let computed_proof_hash = hash_orchard_proof_fields(
+    let proof_hash = hash_orchard_proof_fields(
         &proof.zkproof,
         &proof.rk,
         proof.cv,
         proof.cv_sha256,
         proof.airdrop_nullifier.into(),
     )
-    .map_err(|_| VpError::ProofHashMismatch)?;
+    .map_err(|_| VpError::InvalidSpendAuthSignature)?;
 
-    if computed_proof_hash != *proof_hash {
-        return Err(VpError::ProofHashMismatch.into());
-    }
-
-    Ok(())
-}
-
-/// Verifies that the Orchard spend-auth signature is valid.
-fn verify_signature(
-    target_id: &[u8],
-    proof_hash: &[u8; 32],
-    message_hash: &[u8; 32],
-    rk_bytes: &[u8; 32],
-    spend_auth_sig: &[u8; 64],
-) -> Result<()> {
     let digest =
-        signature_digest(Pool::Orchard, target_id, proof_hash, message_hash)
+        signature_digest(Pool::Orchard, target_id, &proof_hash, message_hash)
             .map_err(|_| VpError::InvalidSpendAuthSignature)?;
-    zair_orchard_proofs::verify_signature(*rk_bytes, *spend_auth_sig, &digest)
-        .map_err(|_| VpError::InvalidSpendAuthSignature)?;
+    zair_orchard_proofs::verify_signature(
+        proof.rk,
+        proof.spend_auth_sig,
+        &digest,
+    )
+    .map_err(|_| VpError::InvalidSpendAuthSignature)?;
 
     Ok(())
 }
@@ -108,15 +98,7 @@ where
 
     // Finally, verify the proofs.
     for OrchardClaimProof { proof, message } in orchard_proofs {
-        check_proof_hash(&proof.proof_hash, proof)?;
-        check_message_hash(&proof.message_hash, message)?;
-        verify_signature(
-            &target_id,
-            &proof.proof_hash,
-            &proof.message_hash,
-            &proof.rk,
-            &proof.spend_auth_sig,
-        )?;
+        verify_signature(&target_id, proof, &message.hash())?;
 
         if scheme != OrchardValueCommitmentScheme::Sha256 {
             return Err(VpError::UnsupportedValueCommitmentScheme.into());

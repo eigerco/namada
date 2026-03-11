@@ -61,10 +61,6 @@ pub enum VpError {
     // Message error types.
     #[error("Message target {0} does not match action target {1}")]
     MessageTargetMismatch(Address, Address),
-    #[error("Computed proof hash is different from provided proof hash")]
-    ProofHashMismatch,
-    #[error("Computed message hash is different from provided message hash")]
-    MessageHashMismatch,
     #[error("Invalid spend auth signature")]
     InvalidSpendAuthSignature,
 }

@@ -9,15 +9,16 @@ use zair_sapling_proofs::{
     verify_claim_proof_bytes as verify_sapling_proof,
 };
 
-use super::{VpError, check_message_hash, check_sha256_value_commitment};
+use super::{VpError, check_sha256_value_commitment};
 use crate::storage_key::sapling as sapling_key;
 
-/// Checks that the Sapling proof hash is valid.
-fn check_proof_hash(
-    proof_hash: &[u8; 32],
+/// Verifies that the Sapling spend-auth signature is valid.
+fn verify_signature(
+    target_id: &[u8],
     proof: &SaplingSignedClaim,
+    message_hash: &[u8; 32],
 ) -> Result<()> {
-    let computed_proof_hash = hash_sapling_proof_fields(
+    let proof_hash = hash_sapling_proof_fields(
         &proof.zkproof,
         &proof.rk,
         proof.cv,
@@ -25,26 +26,15 @@ fn check_proof_hash(
         proof.airdrop_nullifier.into(),
     );
 
-    if computed_proof_hash != *proof_hash {
-        return Err(VpError::ProofHashMismatch.into());
-    }
-
-    Ok(())
-}
-
-/// Verifies that the Sapling spend-auth signature is valid.
-fn verify_signature(
-    target_id: &[u8],
-    proof_hash: &[u8; 32],
-    message_hash: &[u8; 32],
-    rk_bytes: &[u8; 32],
-    spend_auth_sig: &[u8; 64],
-) -> Result<()> {
     let digest =
-        signature_digest(Pool::Sapling, target_id, proof_hash, message_hash)
+        signature_digest(Pool::Sapling, target_id, &proof_hash, message_hash)
             .map_err(|_| VpError::InvalidSpendAuthSignature)?;
-    zair_sapling_proofs::verify_signature(*rk_bytes, *spend_auth_sig, &digest)
-        .map_err(|_| VpError::InvalidSpendAuthSignature)?;
+    zair_sapling_proofs::verify_signature(
+        proof.rk,
+        proof.spend_auth_sig,
+        &digest,
+    )
+    .map_err(|_| VpError::InvalidSpendAuthSignature)?;
 
     Ok(())
 }
@@ -108,15 +98,7 @@ where
 
     // Finally, verify the proofs sequentially.
     for SaplingClaimProof { proof, message } in sapling_proofs {
-        check_proof_hash(&proof.proof_hash, proof)?;
-        check_message_hash(&proof.message_hash, message)?;
-        verify_signature(
-            &target_id,
-            &proof.proof_hash,
-            &proof.message_hash,
-            &proof.rk,
-            &proof.spend_auth_sig,
-        )?;
+        verify_signature(&target_id, proof, &message.hash())?;
 
         // Check that value commitment matches.
         if scheme != SaplingValueCommitmentScheme::Sha256 {
